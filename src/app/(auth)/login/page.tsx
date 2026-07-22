@@ -5,7 +5,8 @@ import { motion } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Zap, Eye, EyeOff, Loader2, Lock, Mail, UserPlus, LogIn, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Lock, Mail, UserPlus, LogIn, CheckCircle2 } from 'lucide-react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -90,9 +91,20 @@ function LoginFormContent() {
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1, duration: 0.3 }}
-          className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#06B6D4] to-[#8B5CF6] glow-cyan mb-4"
+          className="inline-flex items-center justify-center mb-4 relative"
         >
-          <Zap className="w-8 h-8 text-white" />
+          {/* Outer glow ring */}
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#00d4ff]/20 to-[#0066ff]/20 blur-xl scale-125" />
+          <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-lg border border-[#00d4ff]/20">
+            <Image
+              src="/td-logo.svg"
+              alt="TEMTECH Dashboard Logo"
+              width={80}
+              height={80}
+              priority
+              className="w-full h-full object-cover"
+            />
+          </div>
         </motion.div>
         <h1 className="text-2xl font-display font-bold text-white">
           TEM<span className="gradient-text-cyan">TECH</span> Studio
@@ -101,6 +113,7 @@ function LoginFormContent() {
           {mode === 'signin' ? 'Acceso al Dashboard CRM' : 'Crear nueva cuenta'}
         </p>
       </div>
+
 
       {/* Mode switch tabs */}
       <div className="flex bg-[#0F172A] p-1 rounded-xl mb-6 border border-[#1E2A3A]">
