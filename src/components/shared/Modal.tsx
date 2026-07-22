@@ -48,52 +48,49 @@ export function Modal({ isOpen, title, onClose, children, maxWidth = 'max-w-lg' 
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
             onClick={onClose}
           />
 
           {/* 
-            Mobile: slides up from bottom (bottom sheet)
-            Desktop (sm+): centered with scale animation
+            Mobile: slides up from bottom (full-width bottom sheet)
+            Desktop (sm+): centered with max width
           */}
           <motion.div
-            // Mobile animation: slide up
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            // Desktop overrides via CSS — handled by the sm: variant classes
             className={`
-              relative z-10 w-full bg-[#0D1929] border-t border-[#1E2A3A]
-              rounded-t-3xl shadow-2xl
+              relative z-10 w-full max-w-full bg-[#0D1929] border-t border-[#1E2A3A]
+              rounded-t-3xl shadow-2xl flex flex-col
               sm:rounded-2xl sm:border sm:border-[#1E2A3A] sm:${maxWidth} sm:mx-auto
             `}
             transition={{
               type: 'spring',
-              damping: 30,
-              stiffness: 300,
+              damping: 28,
+              stiffness: 320,
             }}
-            // Override animation for sm+ screens
-            style={{ maxHeight: '92dvh', overflowY: 'auto' }}
+            style={{ maxHeight: '90dvh' }}
           >
             {/* Drag handle (visible on mobile only) */}
             <div className="flex justify-center pt-3 pb-1 sm:hidden">
-              <div className="w-10 h-1 rounded-full bg-[#2D3E50]" />
+              <div className="w-12 h-1.5 rounded-full bg-[#2D3E50]" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-4 border-b border-[#1E2A3A] sm:pt-5 sm:px-6">
+            <div className="flex items-center justify-between px-5 pt-3 pb-4 border-b border-[#1E2A3A] sm:pt-5 sm:px-6 flex-shrink-0">
               <h2 className="text-base font-bold text-white sm:text-lg">{title}</h2>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg text-[#4B6A8A] hover:text-white hover:bg-[#1E2A3A] transition-colors"
+                className="p-2 rounded-xl text-[#4B6A8A] hover:text-white hover:bg-[#1E2A3A] transition-colors"
                 aria-label="Cerrar"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Content */}
-            <div className="px-5 py-5 sm:px-6 sm:py-6">
+            {/* Content (scrollable) */}
+            <div className="px-5 py-5 sm:px-6 sm:py-6 overflow-y-auto pb-safe">
               {children}
             </div>
           </motion.div>

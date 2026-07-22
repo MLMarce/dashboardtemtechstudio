@@ -309,16 +309,17 @@ export default function ProjectsPage() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
+          <div className="flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory lg:grid lg:grid-cols-4 lg:overflow-x-visible no-scrollbar">
             {COLUMNS.map(col => {
               const colProjects = projects.filter(p => p.status === col.id)
               return (
-                <KanbanColumn
-                  key={col.id}
-                  column={col}
-                  projects={colProjects}
-                  onDeleteProject={p => setDeletingProject(p)}
-                />
+                <div key={col.id} className="min-w-[280px] w-[85vw] sm:w-[320px] lg:w-auto flex-shrink-0 snap-center">
+                  <KanbanColumn
+                    column={col}
+                    projects={colProjects}
+                    onDeleteProject={p => setDeletingProject(p)}
+                  />
+                </div>
               )
             })}
           </div>

@@ -50,7 +50,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#1E2A3A] pb-3">
+      <div className="flex items-center gap-2 border-b border-[#1E2A3A] pb-3 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0">
         {[
           { id: 'profile', label: 'Perfil', icon: User },
           { id: 'notifications', label: 'Notificaciones', icon: Bell },
@@ -62,14 +62,14 @@ export default function SettingsPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex-shrink-0 active:scale-95 ${
                 isActive
-                  ? 'bg-gradient-to-r from-[#06B6D4]/15 to-[#8B5CF6]/10 text-white border border-[#06B6D4]/30'
+                  ? 'bg-gradient-to-r from-[#06B6D4]/15 to-[#8B5CF6]/10 text-white border border-[#06B6D4]/30 shadow-sm'
                   : 'text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]'
               }`}
             >
               <Icon className={`w-4 h-4 ${isActive ? 'text-[#06B6D4]' : ''}`} />
-              {tab.label}
+              <span>{tab.label}</span>
             </button>
           )
         })}

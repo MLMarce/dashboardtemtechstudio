@@ -13,9 +13,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
       />
-      <div className="flex-1 flex flex-col lg:ml-64">
+      <div className="flex-1 flex flex-col lg:ml-64 min-w-0">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-3.5 sm:p-6 pb-safe">{children}</main>
       </div>
     </div>
   )

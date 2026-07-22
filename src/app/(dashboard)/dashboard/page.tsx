@@ -158,19 +158,19 @@ export default function DashboardPage() {
       className="space-y-6 max-w-7xl mx-auto"
     >
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight">
             Dashboard General
           </h1>
-          <p className="text-sm text-[#94A3B8] mt-1">
-            Resumen en tiempo real conectado directamente a Supabase Database.
+          <p className="text-xs sm:text-sm text-[#94A3B8] mt-0.5">
+            Resumen en tiempo real conectado directamente a Supabase.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Link
             href="/leads"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#06B6D4] to-[#0891B2] text-white text-sm font-semibold hover:opacity-90 transition-all glow-cyan"
+            className="w-full sm:w-auto justify-center inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#06B6D4] to-[#0891B2] text-white text-sm font-semibold hover:opacity-90 transition-all glow-cyan active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
             Nuevo Lead
@@ -179,37 +179,37 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         {statCards.map((card, idx) => {
           const Icon = card.icon
           return (
             <motion.div key={idx} variants={itemVariants}>
               <Link href={card.href} className="block group">
-                <div className="glass-card p-4 hover:border-[#06B6D4]/40 transition-all duration-300 relative overflow-hidden group-hover:-translate-y-1">
+                <div className="glass-card p-3.5 sm:p-4 hover:border-[#06B6D4]/40 transition-all duration-300 relative overflow-hidden group-hover:-translate-y-1">
                   <div
                     className="absolute -right-4 -bottom-4 w-24 h-24 rounded-full blur-2xl pointer-events-none transition-opacity group-hover:opacity-100 opacity-60"
                     style={{ background: card.bgGlow }}
                   />
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-[#94A3B8]">
+                    <span className="text-[11px] sm:text-xs font-medium text-[#94A3B8] truncate">
                       {card.title}
                     </span>
                     <div
-                      className="p-2 rounded-lg flex items-center justify-center"
+                      className="p-1.5 sm:p-2 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={{ background: card.bgGlow, color: card.color }}
                     >
-                      <Icon className="w-4 h-4" />
+                      <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </div>
                   </div>
-                  <div className="mt-3 flex items-baseline justify-between">
-                    <span className="text-2xl font-display font-bold text-white tracking-tight">
+                  <div className="mt-2 sm:mt-3 flex items-baseline justify-between">
+                    <span className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight">
                       {card.value}
                     </span>
-                    <span className="text-[11px] font-medium text-[#22C55E] flex items-center gap-0.5">
+                    <span className="text-[10px] sm:text-[11px] font-medium text-[#22C55E] flex items-center gap-0.5">
                       {card.change}
                     </span>
                   </div>
-                  <div className="mt-1 text-[10px] text-[#4B6A8A]">
+                  <div className="mt-0.5 sm:mt-1 text-[10px] text-[#4B6A8A] truncate">
                     {card.period}
                   </div>
                 </div>
@@ -220,18 +220,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Commercial Pipeline section */}
-      <motion.div variants={itemVariants} className="glass-card p-6">
+      <motion.div variants={itemVariants} className="glass-card p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-base font-semibold text-white">Pipeline Comercial (Supabase Realtime)</h2>
-            <p className="text-xs text-[#94A3B8]">Distribución de leads según su estado actual</p>
+            <h2 className="text-sm sm:text-base font-semibold text-white">Pipeline Comercial</h2>
+            <p className="text-xs text-[#94A3B8]">Leads según su estado actual</p>
           </div>
           <Link href="/leads" className="text-xs text-[#06B6D4] hover:underline flex items-center gap-1">
             Ver Leads <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
           {[
             { label: 'Nuevos', count: pipelineCounts.nuevo, color: '#06B6D4' },
             { label: 'Contactados', count: pipelineCounts.contactado, color: '#8B5CF6' },

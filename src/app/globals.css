@@ -139,13 +139,37 @@ body {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Kanban column */
-.kanban-column {
-  min-height: 200px;
-  transition: background 0.2s ease;
+/* ─── Touch & Mobile Optimizations ────────────────────────────────────────── */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.kanban-column.drag-over {
-  background: rgba(6, 182, 212, 0.05);
-  border-color: rgba(6, 182, 212, 0.3);
+/* ─── Safe Area Support for iOS Mobile devices ────────────────────────────── */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
 }
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 1rem);
+}
+
+/* ─── Mobile Scroll Helpers ────────────────────────────────────────────────── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.mobile-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+}
+

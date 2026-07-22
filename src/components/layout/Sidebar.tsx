@@ -83,28 +83,28 @@ function SidebarContent({ onMobileClose }: { onMobileClose?: () => void }) {
                 href={item.href}
                 onClick={onMobileClose}
                 className={cn(
-                  'sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium group relative',
+                  'sidebar-link flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium group relative transition-all active:scale-[0.98]',
                   isActive
-                    ? 'bg-gradient-to-r from-[#06B6D4]/15 to-[#8B5CF6]/10 text-white border border-[#06B6D4]/20'
+                    ? 'bg-gradient-to-r from-[#06B6D4]/15 to-[#8B5CF6]/10 text-white border border-[#06B6D4]/20 shadow-sm'
                     : 'text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]'
                 )}
               >
                 {isActive && (
                   <motion.div
                     layoutId="sidebar-active-indicator"
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-[#06B6D4] rounded-full"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#06B6D4] rounded-r-full"
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   />
                 )}
                 <Icon
                   className={cn(
-                    'w-4.5 h-4.5 flex-shrink-0 transition-colors',
+                    'w-5 h-5 flex-shrink-0 transition-colors',
                     isActive ? 'text-[#06B6D4]' : 'text-[#4B6A8A] group-hover:text-[#94A3B8]'
                   )}
                 />
-                <span className="flex-1">{item.label}</span>
+                <span className="flex-1 font-medium">{item.label}</span>
                 {isActive && (
-                  <ChevronRight className="w-3.5 h-3.5 text-[#06B6D4] opacity-70" />
+                  <ChevronRight className="w-4 h-4 text-[#06B6D4] opacity-80" />
                 )}
               </Link>
             </motion.div>
