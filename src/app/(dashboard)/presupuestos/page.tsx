@@ -22,6 +22,7 @@ import {
 import { getClients } from '@/services/clients'
 import { Quote, QuoteStatus, Client } from '@/types'
 import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Modal } from '@/components/shared/Modal'
 import { Toast, ToastState } from '@/components/shared/Toast'
 
 const statusBadges: Record<QuoteStatus, string> = {
@@ -38,17 +39,14 @@ export default function QuotesPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('todos')
 
-  // Modals Create / Edit / Preview
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null)
   const [previewQuote, setPreviewQuote] = useState<Quote | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Modal Delete
   const [deletingQuote, setDeletingQuote] = useState<Quote | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
-  // Toast
   const [toast, setToast] = useState<ToastState | null>(null)
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -65,10 +63,7 @@ export default function QuotesPage() {
 
   const loadData = async () => {
     setLoading(true)
-    const [quoteData, clientData] = await Promise.all([
-      getQuotes(),
-      getClients(),
-    ])
+    const [quoteData, clientData] = await Promise.all([getQuotes(), getClients()])
     setQuotes(quoteData)
     setClients(clientData)
     if (clientData.length > 0 && !formData.client_id) {
@@ -77,9 +72,7 @@ export default function QuotesPage() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
   const filteredQuotes = quotes.filter(q => {
     const clientName = q.client?.company || q.client?.name || ''
@@ -92,23 +85,13 @@ export default function QuotesPage() {
 
   const openCreateModal = () => {
     setEditingQuote(null)
-    setFormData({
-      title: '',
-      client_id: clients[0]?.id || '',
-      amount: '',
-      status: 'Borrador',
-    })
+    setFormData({ title: '', client_id: clients[0]?.id || '', amount: '', status: 'Borrador' })
     setIsModalOpen(true)
   }
 
   const openEditModal = (q: Quote) => {
     setEditingQuote(q)
-    setFormData({
-      title: q.title,
-      client_id: q.client_id,
-      amount: q.amount.toString(),
-      status: q.status,
-    })
+    setFormData({ title: q.title, client_id: q.client_id, amount: q.amount.toString(), status: q.status })
     setIsModalOpen(true)
   }
 
@@ -161,16 +144,10 @@ export default function QuotesPage() {
     }
   }
 
-  const handlePrintPDF = (quote: Quote) => {
-    setPreviewQuote(quote)
-  }
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Toast */}
       <Toast toast={toast} onClose={() => setToast(null)} />
 
-      {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={!!deletingQuote}
         title="¿Eliminar Presupuesto?"
@@ -212,16 +189,13 @@ export default function QuotesPage() {
             className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder:text-[#4B6A8A] focus:outline-none focus:border-[#06B6D4]/50"
           />
         </div>
-
         <div className="flex items-center gap-1 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
           {['todos', 'Borrador', 'Enviado', 'Aceptado', 'Rechazado'].map(st => (
             <button
               key={st}
               onClick={() => setFilterStatus(st)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                filterStatus === st
-                  ? 'bg-[#06B6D4] text-white shadow-sm'
-                  : 'text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]'
+                filterStatus === st ? 'bg-[#06B6D4] text-white shadow-sm' : 'text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]'
               }`}
             >
               {st === 'todos' ? 'Todos' : st}
@@ -230,7 +204,7 @@ export default function QuotesPage() {
         </div>
       </div>
 
-      {/* Quotes Table */}
+      {/* Table */}
       <div className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
           {loading ? (
@@ -283,16 +257,14 @@ export default function QuotesPage() {
                         </td>
                         <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
                           {new Date(q.created_at).toLocaleDateString('es-AR', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
+                            day: '2-digit', month: 'short', year: 'numeric',
                           })}
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => handlePrintPDF(q)}
-                              title="Previsualizar PDF / Imprimir"
+                              onClick={() => setPreviewQuote(q)}
+                              title="Previsualizar PDF"
                               className="p-1.5 rounded-lg text-[#06B6D4] hover:bg-[#06B6D4]/10 transition-colors"
                             >
                               <Eye className="w-4 h-4" />
@@ -323,123 +295,97 @@ export default function QuotesPage() {
         </div>
       </div>
 
-      {/* Modal Create / Edit */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setIsModalOpen(false)}
+      {/* Modal Create / Edit — responsive: bottom sheet on mobile */}
+      <Modal
+        isOpen={isModalOpen}
+        title={editingQuote ? 'Editar Presupuesto' : 'Nuevo Presupuesto'}
+        onClose={() => setIsModalOpen(false)}
+      >
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Título / Propuesta
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.title}
+              onChange={e => setFormData({ ...formData, title: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-card w-full max-w-lg p-6 relative z-10 shadow-modal"
-            >
-              <div className="flex items-center justify-between border-b border-[#1E2A3A] pb-4 mb-4">
-                <h2 className="text-lg font-bold text-white">
-                  {editingQuote ? 'Editar Presupuesto' : 'Nuevo Presupuesto'}
-                </h2>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-1 rounded-lg text-[#4B6A8A] hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSave} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Título / Propuesta
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.title}
-                    onChange={e => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Cliente
-                  </label>
-                  <select
-                    value={formData.client_id}
-                    onChange={e => setFormData({ ...formData, client_id: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  >
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.company} ({c.name})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                      Monto ($ ARS / USD)
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      value={formData.amount}
-                      onChange={e => setFormData({ ...formData, amount: e.target.value })}
-                      className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                      Estado
-                    </label>
-                    <select
-                      value={formData.status}
-                      onChange={e => setFormData({ ...formData, status: e.target.value as QuoteStatus })}
-                      className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                    >
-                      <option value="Borrador">Borrador</option>
-                      <option value="Enviado">Enviado</option>
-                      <option value="Aceptado">Aceptado</option>
-                      <option value="Rechazado">Rechazado</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1E2A3A]">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold text-[#94A3B8]"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Guardar
-                  </button>
-                </div>
-              </form>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
 
-      {/* PDF Preview Modal */}
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Cliente
+            </label>
+            <select
+              value={formData.client_id}
+              onChange={e => setFormData({ ...formData, client_id: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+            >
+              {clients.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.company} ({c.name})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                Monto ($ ARS / USD)
+              </label>
+              <input
+                type="number"
+                required
+                value={formData.amount}
+                onChange={e => setFormData({ ...formData, amount: e.target.value })}
+                className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                Estado
+              </label>
+              <select
+                value={formData.status}
+                onChange={e => setFormData({ ...formData, status: e.target.value as QuoteStatus })}
+                className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+              >
+                <option value="Borrador">Borrador</option>
+                <option value="Enviado">Enviado</option>
+                <option value="Aceptado">Aceptado</option>
+                <option value="Rechazado">Rechazado</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 pt-4 border-t border-[#1E2A3A] sm:flex-row sm:justify-end sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="w-full sm:w-auto px-4 py-3 rounded-xl text-sm font-semibold text-[#94A3B8] hover:bg-[#1E2A3A] sm:py-2"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full sm:w-auto px-4 py-3 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan flex items-center justify-center gap-2 disabled:opacity-50 sm:py-2"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Guardar
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* PDF Preview — uses AnimatePresence/motion for desktop-centered sheet effect */}
       <AnimatePresence>
         {previewQuote && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -448,14 +394,21 @@ export default function QuotesPage() {
               onClick={() => setPreviewQuote(null)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[#0F172A] border border-[#1E2A3A] w-full max-w-2xl rounded-2xl p-8 relative z-10 shadow-modal overflow-hidden text-white"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="relative z-10 w-full bg-[#0F172A] border-t border-[#1E2A3A] rounded-t-3xl shadow-2xl sm:rounded-2xl sm:border sm:border-[#1E2A3A] sm:max-w-2xl overflow-auto"
+              style={{ maxHeight: '90dvh' }}
             >
-              <div className="flex items-center justify-between border-b border-[#1E2A3A] pb-4 mb-6">
+              {/* Mobile drag handle */}
+              <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                <div className="w-10 h-1 rounded-full bg-[#2D3E50]" />
+              </div>
+
+              <div className="flex items-center justify-between px-5 pt-4 pb-4 border-b border-[#1E2A3A]">
                 <span className="text-xs font-mono text-[#06B6D4] uppercase tracking-wider">
-                  TEMTECH Studio — Documento PDF Presupuesto
+                  TEMTECH — Documento PDF Presupuesto
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -464,56 +417,55 @@ export default function QuotesPage() {
                   >
                     <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
                   </button>
-                  <button
-                    onClick={() => setPreviewQuote(null)}
-                    className="p-1 rounded-lg text-[#4B6A8A] hover:text-white"
-                  >
+                  <button onClick={() => setPreviewQuote(null)} className="p-1 rounded-lg text-[#4B6A8A] hover:text-white">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
-              <div className="bg-[#111827] p-8 rounded-xl border border-[#1E2A3A] space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold font-display text-white">
-                      TEM<span className="text-[#06B6D4]">TECH</span> Studio
-                    </h3>
-                    <p className="text-xs text-[#94A3B8]">Agencia de Software & Transformación Digital</p>
+              <div className="p-5 sm:p-8">
+                <div className="bg-[#111827] p-6 sm:p-8 rounded-xl border border-[#1E2A3A] space-y-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold font-display">
+                        TEM<span className="text-[#06B6D4]">TECH</span> Studio
+                      </h3>
+                      <p className="text-xs text-[#94A3B8]">Agencia de Software & Transformación Digital</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-semibold text-[#06B6D4] block">COTIZACIÓN</span>
+                      <span className="text-xs text-[#4B6A8A]">#{previewQuote.id.slice(0, 8)}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs font-semibold text-[#06B6D4] block">COTIZACIÓN</span>
-                    <span className="text-xs text-[#4B6A8A]">#{previewQuote.id}</span>
-                  </div>
-                </div>
 
-                <div className="border-t border-b border-[#1E2A3A] py-4 grid grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <span className="text-[#4B6A8A] block">CLIENTE:</span>
-                    <strong className="text-white">
-                      {previewQuote.client?.company || previewQuote.client?.name || 'Cliente'}
-                    </strong>
+                  <div className="border-t border-b border-[#1E2A3A] py-4 grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs">
+                    <div>
+                      <span className="text-[#4B6A8A] block">CLIENTE:</span>
+                      <strong className="text-white">
+                        {previewQuote.client?.company || previewQuote.client?.name || 'Cliente'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[#4B6A8A] block">FECHA DE EMISIÓN:</span>
+                      <strong className="text-white">
+                        {new Date(previewQuote.created_at).toLocaleDateString('es-AR')}
+                      </strong>
+                    </div>
                   </div>
+
                   <div>
-                    <span className="text-[#4B6A8A] block">FECHA DE EMISIÓN:</span>
-                    <strong className="text-white">
-                      {new Date(previewQuote.created_at).toLocaleDateString('es-AR')}
-                    </strong>
+                    <h4 className="text-sm font-semibold text-white mb-2">{previewQuote.title}</h4>
+                    <p className="text-xs text-[#94A3B8] leading-relaxed">
+                      Incluye desarrollo fullstack, integración de componentes premium, pruebas de calidad y despliegue automatizado en infraestructura cloud.
+                    </p>
                   </div>
-                </div>
 
-                <div>
-                  <h4 className="text-sm font-semibold text-white mb-2">{previewQuote.title}</h4>
-                  <p className="text-xs text-[#94A3B8] leading-relaxed">
-                    Incluye desarrollo fullstack, integración de componentes premium, pruebas de calidad y despliegue automatizado en infraestructura cloud.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-4 border-t border-[#1E2A3A]">
-                  <span className="text-sm font-semibold text-white">TOTAL ESTIMADO:</span>
-                  <span className="text-2xl font-bold font-display text-[#06B6D4]">
-                    ${previewQuote.amount.toLocaleString()} ARS
-                  </span>
+                  <div className="flex flex-col gap-2 pt-4 border-t border-[#1E2A3A] sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-semibold text-white">TOTAL ESTIMADO:</span>
+                    <span className="text-2xl font-bold font-display text-[#06B6D4]">
+                      ${previewQuote.amount.toLocaleString()} ARS
+                    </span>
+                  </div>
                 </div>
               </div>
             </motion.div>

@@ -21,14 +21,12 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus,
   Building,
   Calendar,
   GripVertical,
   Trash2,
-  X,
   Loader2,
 } from 'lucide-react'
 import {
@@ -40,6 +38,7 @@ import {
 import { getClients } from '@/services/clients'
 import { Project, ProjectStatus, Client } from '@/types'
 import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Modal } from '@/components/shared/Modal'
 import { Toast, ToastState } from '@/components/shared/Toast'
 
 const COLUMNS: { id: ProjectStatus; title: string; color: string }[] = [
@@ -58,19 +57,8 @@ function ProjectCard({
   isDragging?: boolean
   onDelete?: (project: Project) => void
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: project.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: project.id })
+  const style = { transform: CSS.Transform.toString(transform), transition }
   const clientName = project.client?.company || 'Cliente'
 
   return (
@@ -87,12 +75,8 @@ function ProjectCard({
           {onDelete && (
             <button
               type="button"
-              onClick={e => {
-                e.stopPropagation()
-                onDelete(project)
-              }}
+              onClick={e => { e.stopPropagation(); onDelete(project) }}
               className="text-[#4B6A8A] hover:text-[#EF4444] p-1 transition-colors"
-              title="Eliminar proyecto"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -102,28 +86,18 @@ function ProjectCard({
           </div>
         </div>
       </div>
-
-      {project.description && (
-        <p className="text-xs text-[#94A3B8] line-clamp-2">{project.description}</p>
-      )}
-
+      {project.description && <p className="text-xs text-[#94A3B8] line-clamp-2">{project.description}</p>}
       <div className="flex items-center gap-1.5 text-xs text-[#06B6D4] font-medium">
         <Building className="w-3.5 h-3.5" />
         {clientName}
       </div>
-
       <div className="flex items-center justify-between text-[11px] text-[#4B6A8A] pt-2 border-t border-[#1E2A3A]">
         <span className="flex items-center gap-1">
           <Calendar className="w-3 h-3" />
-          {new Date(project.created_at).toLocaleDateString('es-AR', {
-            day: '2-digit',
-            month: 'short',
-          })}
+          {new Date(project.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
         </span>
         {project.budget && (
-          <span className="font-semibold text-white flex items-center">
-            ${project.budget.toLocaleString()}
-          </span>
+          <span className="font-semibold text-white">${project.budget.toLocaleString()}</span>
         )}
       </div>
     </div>
@@ -157,12 +131,7 @@ function KanbanColumn({
           {projects.length}
         </span>
       </div>
-
-      <SortableContext
-        id={column.id}
-        items={projects.map(p => p.id)}
-        strategy={verticalListSortingStrategy}
-      >
+      <SortableContext id={column.id} items={projects.map(p => p.id)} strategy={verticalListSortingStrategy}>
         <div className="flex-1 space-y-3 kanban-column">
           {projects.length === 0 ? (
             <div className="h-32 border border-dashed border-[#1E2A3A] rounded-xl flex items-center justify-center text-xs text-[#4B6A8A]">
@@ -170,11 +139,7 @@ function KanbanColumn({
             </div>
           ) : (
             projects.map(proj => (
-              <ProjectCard
-                key={proj.id}
-                project={proj}
-                onDelete={onDeleteProject}
-              />
+              <ProjectCard key={proj.id} project={proj} onDelete={onDeleteProject} />
             ))
           )}
         </div>
@@ -189,15 +154,10 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true)
   const [activeProject, setActiveProject] = useState<Project | null>(null)
 
-  // Modal Create
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-
-  // Modal Delete
   const [deletingProject, setDeletingProject] = useState<Project | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
-
-  // Toast
   const [toast, setToast] = useState<ToastState | null>(null)
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -220,10 +180,7 @@ export default function ProjectsPage() {
 
   const loadData = async () => {
     setLoading(true)
-    const [projData, clientData] = await Promise.all([
-      getProjects(),
-      getClients(),
-    ])
+    const [projData, clientData] = await Promise.all([getProjects(), getClients()])
     setProjects(projData)
     setClients(clientData)
     if (clientData.length > 0 && !formData.client_id) {
@@ -232,9 +189,7 @@ export default function ProjectsPage() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
   const handleDragStart = (event: DragStartEvent) => {
     const proj = projects.find(p => p.id === event.active.id)
@@ -244,29 +199,20 @@ export default function ProjectsPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveProject(null)
-
     if (!over) return
-
     const activeId = active.id.toString()
     const overId = over.id.toString()
-
     let targetStatus: ProjectStatus | null = null
-
-    // Check if over ID is direct column status (e.g. 'En Desarrollo', 'Entregado')
     if (COLUMNS.some(c => c.id === overId)) {
       targetStatus = overId as ProjectStatus
     } else {
-      // Check if over ID is a project inside a column
       const overProj = projects.find(p => p.id === overId)
       if (overProj) targetStatus = overProj.status
     }
-
     if (targetStatus) {
-      setProjects(prev =>
-        prev.map(p => (p.id === activeId ? { ...p, status: targetStatus! } : p))
-      )
+      setProjects(prev => prev.map(p => (p.id === activeId ? { ...p, status: targetStatus! } : p)))
       await updateProjectStatus(activeId, targetStatus)
-      showToast(`Estado de proyecto actualizado a "${targetStatus}"`, 'info')
+      showToast(`Estado actualizado a "${targetStatus}"`, 'info')
     }
   }
 
@@ -312,7 +258,6 @@ export default function ProjectsPage() {
     }
   }
 
-  // Custom collision detection combining pointerWithin & rectIntersection
   const customCollisionDetection = (args: any) => {
     const pointerCollisions = pointerWithin(args)
     if (pointerCollisions.length > 0) return pointerCollisions
@@ -321,10 +266,8 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Toast */}
       <Toast toast={toast} onClose={() => setToast(null)} />
 
-      {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={!!deletingProject}
         title="¿Eliminar Proyecto?"
@@ -360,14 +303,13 @@ export default function ProjectsPage() {
           Cargando proyectos desde Supabase...
         </div>
       ) : (
-        /* Kanban Board */
         <DndContext
           sensors={sensors}
           collisionDetection={customCollisionDetection}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
             {COLUMNS.map(col => {
               const colProjects = projects.filter(p => p.status === col.id)
               return (
@@ -380,135 +322,110 @@ export default function ProjectsPage() {
               )
             })}
           </div>
-
           <DragOverlay>
             {activeProject ? <ProjectCard project={activeProject} isDragging /> : null}
           </DragOverlay>
         </DndContext>
       )}
 
-      {/* Modal Create */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setIsModalOpen(false)}
+      {/* Modal — responsive: bottom sheet on mobile, centered on desktop */}
+      <Modal
+        isOpen={isModalOpen}
+        title="Nuevo Proyecto"
+        onClose={() => setIsModalOpen(false)}
+      >
+        <form onSubmit={handleCreateProject} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Nombre del proyecto
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.name}
+              onChange={e => setFormData({ ...formData, name: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-card w-full max-w-lg p-6 relative z-10 shadow-modal"
-            >
-              <div className="flex items-center justify-between border-b border-[#1E2A3A] pb-4 mb-4">
-                <h2 className="text-lg font-bold text-white">Nuevo Proyecto</h2>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-1 rounded-lg text-[#4B6A8A] hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateProject} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Nombre del proyecto
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Cliente
-                  </label>
-                  <select
-                    value={formData.client_id}
-                    onChange={e => setFormData({ ...formData, client_id: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  >
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.company} ({c.name})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                      Estado inicial
-                    </label>
-                    <select
-                      value={formData.status}
-                      onChange={e => setFormData({ ...formData, status: e.target.value as ProjectStatus })}
-                      className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                    >
-                      <option value="Pendiente">Pendiente</option>
-                      <option value="En Desarrollo">En Desarrollo</option>
-                      <option value="En Revisión">En Revisión</option>
-                      <option value="Entregado">Entregado</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                      Presupuesto ($)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="150000"
-                      value={formData.budget}
-                      onChange={e => setFormData({ ...formData, budget: e.target.value })}
-                      className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Descripción
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={formData.description}
-                    onChange={e => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1E2A3A]">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold text-[#94A3B8]"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Crear Proyecto
-                  </button>
-                </div>
-              </form>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Cliente
+            </label>
+            <select
+              value={formData.client_id}
+              onChange={e => setFormData({ ...formData, client_id: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+            >
+              {clients.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.company} ({c.name})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                Estado inicial
+              </label>
+              <select
+                value={formData.status}
+                onChange={e => setFormData({ ...formData, status: e.target.value as ProjectStatus })}
+                className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+              >
+                <option value="Pendiente">Pendiente</option>
+                <option value="En Desarrollo">En Desarrollo</option>
+                <option value="En Revisión">En Revisión</option>
+                <option value="Entregado">Entregado</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                Presupuesto ($)
+              </label>
+              <input
+                type="number"
+                placeholder="150000"
+                value={formData.budget}
+                onChange={e => setFormData({ ...formData, budget: e.target.value })}
+                className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Descripción
+            </label>
+            <textarea
+              rows={3}
+              value={formData.description}
+              onChange={e => setFormData({ ...formData, description: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 pt-4 border-t border-[#1E2A3A] sm:flex-row sm:justify-end sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="w-full sm:w-auto px-4 py-3 rounded-xl text-sm font-semibold text-[#94A3B8] hover:bg-[#1E2A3A] sm:py-2"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full sm:w-auto px-4 py-3 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan flex items-center justify-center gap-2 disabled:opacity-50 sm:py-2"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Crear Proyecto
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

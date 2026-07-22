@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus,
   Search,
@@ -11,7 +10,6 @@ import {
   FolderKanban,
   Edit2,
   Trash2,
-  X,
   Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -24,6 +22,7 @@ import {
 import { getProjects } from '@/services/projects'
 import { Client, Project } from '@/types'
 import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Modal } from '@/components/shared/Modal'
 import { Toast, ToastState } from '@/components/shared/Toast'
 
 export default function ClientsPage() {
@@ -301,123 +300,97 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setIsModalOpen(false)}
+      {/* Modal Create / Edit */}
+      <Modal
+        isOpen={isModalOpen}
+        title={editingClient ? 'Editar Cliente' : 'Nuevo Cliente'}
+        onClose={() => setIsModalOpen(false)}
+      >
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Nombre del contacto
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.name}
+              onChange={e => setFormData({ ...formData, name: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="glass-card w-full max-w-lg p-6 relative z-10 shadow-modal"
-            >
-              <div className="flex items-center justify-between border-b border-[#1E2A3A] pb-4 mb-4">
-                <h2 className="text-lg font-bold text-white">
-                  {editingClient ? 'Editar Cliente' : 'Nuevo Cliente'}
-                </h2>
-                <button
-                  onClick={() => setIsModalOpen(false)}
-                  className="p-1 rounded-lg text-[#4B6A8A] hover:text-white hover:bg-[#1E2A3A]"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSave} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Nombre del contacto
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Empresa / Razón Social
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.company}
-                    onChange={e => setFormData({ ...formData, company: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={e => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                      Teléfono
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.phone}
-                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#94A3B8] mb-1">
-                    Notas adicionales
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={formData.notes}
-                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1E2A3A]">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold text-[#94A3B8] hover:bg-[#1E2A3A]"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white hover:opacity-90 glow-cyan flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Guardar
-                  </button>
-                </div>
-              </form>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Empresa / Razón Social
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.company}
+              onChange={e => setFormData({ ...formData, company: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                Email
+              </label>
+              <input
+                type="email"
+                required
+                value={formData.email}
+                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                Teléfono
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.phone}
+                onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+              Notas adicionales
+            </label>
+            <textarea
+              rows={3}
+              value={formData.notes}
+              onChange={e => setFormData({ ...formData, notes: e.target.value })}
+              className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#06B6D4] sm:py-2"
+            />
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 pt-4 border-t border-[#1E2A3A] sm:flex-row sm:justify-end sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="w-full sm:w-auto px-4 py-3 rounded-xl text-sm font-semibold text-[#94A3B8] hover:bg-[#1E2A3A] sm:py-2"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full sm:w-auto px-4 py-3 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white hover:opacity-90 glow-cyan flex items-center justify-center gap-2 disabled:opacity-50 sm:py-2"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Guardar
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
