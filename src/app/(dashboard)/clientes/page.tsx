@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  UserCheck,
   Plus,
   Search,
   Building,
@@ -13,19 +12,42 @@ import {
   Edit2,
   Trash2,
   X,
-  CheckCircle2,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
-import { mockClients, mockProjects } from '@/lib/mock-data'
-import { Client } from '@/types'
+import {
+  getClients,
+  createClientRecord,
+  updateClientRecord,
+  deleteClientRecord,
+} from '@/services/clients'
+import { getProjects } from '@/services/projects'
+import { Client, Project } from '@/types'
+import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Toast, ToastState } from '@/components/shared/Toast'
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<Client[]>(mockClients)
+  const [clients, setClients] = useState<Client[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  // Modal
+  // Modal Create / Edit
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Modal Delete
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Toast
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const [formData, setFormData] = useState({
     name: '',
@@ -35,12 +57,20 @@ export default function ClientsPage() {
     notes: '',
   })
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
+  const loadData = async () => {
+    setLoading(true)
+    const [clientData, projectData] = await Promise.all([
+      getClients(),
+      getProjects(),
+    ])
+    setClients(clientData)
+    setProjects(projectData)
+    setLoading(false)
   }
+
+  useEffect(() => {
+    loadData()
+  }, [])
 
   const filteredClients = clients.filter(
     c =>
@@ -67,48 +97,64 @@ export default function ClientsPage() {
     setIsModalOpen(true)
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (editingClient) {
-      setClients(clients.map(c => (c.id === editingClient.id ? { ...c, ...formData } : c)))
-      showToast('Cliente actualizado')
-    } else {
-      const newClient: Client = {
-        id: Date.now().toString(),
-        ...formData,
-        created_at: new Date().toISOString(),
+    setSubmitting(true)
+    try {
+      if (editingClient) {
+        await updateClientRecord(editingClient.id, formData)
+        showToast('Cliente actualizado con éxito')
+      } else {
+        await createClientRecord(formData)
+        showToast('Cliente creado con éxito')
       }
-      setClients([newClient, ...clients])
-      showToast('Cliente creado')
+      setIsModalOpen(false)
+      await loadData()
+    } catch (err: any) {
+      showToast('Error en Supabase: ' + err.message, 'error')
+    } finally {
+      setSubmitting(false)
     }
-    setIsModalOpen(false)
   }
 
-  const handleDelete = (id: string) => {
-    setClients(clients.filter(c => c.id !== id))
-    showToast('Cliente eliminado')
+  const confirmDeleteClient = async () => {
+    if (!deletingClient) return
+    setDeleteLoading(true)
+    try {
+      const ok = await deleteClientRecord(deletingClient.id)
+      if (ok) {
+        setClients(clients.filter(c => c.id !== deletingClient.id))
+        showToast(`Cliente "${deletingClient.company}" eliminado`, 'info')
+      } else {
+        showToast('No se pudo eliminar el cliente', 'error')
+      }
+    } catch (err: any) {
+      showToast('Error al eliminar: ' + err.message, 'error')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingClient(null)
+    }
   }
 
   const getClientProjectCount = (clientId: string) => {
-    return mockProjects.filter(p => p.client_id === clientId).length
+    return projects.filter(p => p.client_id === clientId).length
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Toast */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 right-6 z-50 px-4 py-3 rounded-xl bg-gradient-to-r from-[#22C55E] to-[#06B6D4] text-white font-semibold text-sm shadow-modal flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            {toastMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
+      {/* Delete Modal */}
+      <ConfirmModal
+        isOpen={!!deletingClient}
+        title="¿Eliminar Cliente?"
+        description={`¿Estás seguro de que deseas eliminar a "${deletingClient?.company}" (${deletingClient?.name})? Los proyectos asociados podrían quedar desvinculados.`}
+        confirmText="Eliminar Cliente"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteClient}
+        onCancel={() => setDeletingClient(null)}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -146,105 +192,112 @@ export default function ClientsPage() {
       {/* Clients Table */}
       <div className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-[#1E2A3A] text-[11px] font-semibold text-[#4B6A8A] uppercase tracking-wider bg-[#0F172A]/50">
-                <th className="py-3.5 px-4">Cliente / Contacto</th>
-                <th className="py-3.5 px-4">Empresa</th>
-                <th className="py-3.5 px-4">Email</th>
-                <th className="py-3.5 px-4">Teléfono</th>
-                <th className="py-3.5 px-4">Proyectos</th>
-                <th className="py-3.5 px-4">Fecha Alta</th>
-                <th className="py-3.5 px-4 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1E2A3A]/60 text-sm">
-              {filteredClients.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-[#94A3B8]">
-                    No hay clientes registrados.
-                  </td>
+          {loading ? (
+            <div className="p-12 text-center text-[#94A3B8] flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-[#06B6D4]" />
+              Cargando clientes desde Supabase...
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#1E2A3A] text-[11px] font-semibold text-[#4B6A8A] uppercase tracking-wider bg-[#0F172A]/50">
+                  <th className="py-3.5 px-4">Cliente / Contacto</th>
+                  <th className="py-3.5 px-4">Empresa</th>
+                  <th className="py-3.5 px-4">Email</th>
+                  <th className="py-3.5 px-4">Teléfono</th>
+                  <th className="py-3.5 px-4">Proyectos</th>
+                  <th className="py-3.5 px-4">Fecha Alta</th>
+                  <th className="py-3.5 px-4 text-right">Acciones</th>
                 </tr>
-              ) : (
-                filteredClients.map(client => {
-                  const projCount = getClientProjectCount(client.id)
-                  return (
-                    <tr key={client.id} className="hover:bg-[#1E2A3A]/40 transition-colors group">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#06B6D4]/20 to-[#8B5CF6]/20 border border-[#06B6D4]/30 flex items-center justify-center text-[#06B6D4] font-bold text-sm">
-                            {client.name.substring(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-semibold text-white group-hover:text-[#06B6D4] transition-colors">
-                              {client.name}
-                            </p>
-                            {client.notes && (
-                              <p className="text-xs text-[#94A3B8] line-clamp-1">
-                                {client.notes}
+              </thead>
+              <tbody className="divide-y divide-[#1E2A3A]/60 text-sm">
+                {filteredClients.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-[#94A3B8]">
+                      No hay clientes registrados en la base de datos.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredClients.map(client => {
+                    const projCount = getClientProjectCount(client.id)
+                    return (
+                      <tr key={client.id} className="hover:bg-[#1E2A3A]/40 transition-colors group">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#06B6D4]/20 to-[#8B5CF6]/20 border border-[#06B6D4]/30 flex items-center justify-center text-[#06B6D4] font-bold text-sm">
+                              {client.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-white group-hover:text-[#06B6D4] transition-colors">
+                                {client.name}
                               </p>
-                            )}
+                              {client.notes && (
+                                <p className="text-xs text-[#94A3B8] line-clamp-1">
+                                  {client.notes}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-1.5 text-xs text-white">
-                          <Building className="w-3.5 h-3.5 text-[#4B6A8A]" />
-                          {client.company}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-[#94A3B8]">
-                        <div className="flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-[#4B6A8A]" />
-                          {client.email}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-[#94A3B8]">
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-[#4B6A8A]" />
-                          {client.phone}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <Link
-                          href={`/proyectos`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1E2A3A] hover:bg-[#06B6D4]/20 hover:text-[#06B6D4] text-xs font-semibold text-[#94A3B8] transition-colors"
-                        >
-                          <FolderKanban className="w-3.5 h-3.5" />
-                          {projCount} {projCount === 1 ? 'proyecto' : 'proyectos'}
-                        </Link>
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
-                        {new Date(client.created_at).toLocaleDateString('es-AR', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => openEditModal(client)}
-                            className="p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]"
-                            title="Editar"
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1.5 text-xs text-white">
+                            <Building className="w-3.5 h-3.5 text-[#4B6A8A]" />
+                            {client.company}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-[#94A3B8]">
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-[#4B6A8A]" />
+                            {client.email}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-[#94A3B8]">
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-[#4B6A8A]" />
+                            {client.phone}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <Link
+                            href={`/proyectos`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1E2A3A] hover:bg-[#06B6D4]/20 hover:text-[#06B6D4] text-xs font-semibold text-[#94A3B8] transition-colors"
                           >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(client.id)}
-                            className="p-1.5 rounded-lg text-[#EF4444] hover:bg-[#EF4444]/10"
-                            title="Eliminar"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
+                            <FolderKanban className="w-3.5 h-3.5" />
+                            {projCount} {projCount === 1 ? 'proyecto' : 'proyectos'}
+                          </Link>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
+                          {new Date(client.created_at).toLocaleDateString('es-AR', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openEditModal(client)}
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]"
+                              title="Editar"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setDeletingClient(client)}
+                              className="p-1.5 rounded-lg text-[#EF4444] hover:bg-[#EF4444]/10"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -353,8 +406,10 @@ export default function ClientsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white hover:opacity-90 glow-cyan"
+                    disabled={submitting}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white hover:opacity-90 glow-cyan flex items-center gap-2 disabled:opacity-50"
                   >
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     Guardar
                   </button>
                 </div>

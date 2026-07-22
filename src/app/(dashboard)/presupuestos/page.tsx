@@ -1,23 +1,28 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FileText,
   Plus,
   Search,
   Building,
-  DollarSign,
-  Download,
   Printer,
   Edit2,
   Trash2,
   X,
-  CheckCircle2,
   Eye,
+  Loader2,
 } from 'lucide-react'
-import { mockQuotes, mockClients } from '@/lib/mock-data'
-import { Quote, QuoteStatus } from '@/types'
+import {
+  getQuotes,
+  createQuoteRecord,
+  updateQuoteRecord,
+  deleteQuoteRecord,
+} from '@/services/quotes'
+import { getClients } from '@/services/clients'
+import { Quote, QuoteStatus, Client } from '@/types'
+import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Toast, ToastState } from '@/components/shared/Toast'
 
 const statusBadges: Record<QuoteStatus, string> = {
   Borrador: 'bg-[#94A3B8]/20 text-[#94A3B8] border-[#94A3B8]/30',
@@ -27,35 +32,60 @@ const statusBadges: Record<QuoteStatus, string> = {
 }
 
 export default function QuotesPage() {
-  const [quotes, setQuotes] = useState<Quote[]>(mockQuotes)
+  const [quotes, setQuotes] = useState<Quote[]>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('todos')
 
-  // Modals
+  // Modals Create / Edit / Preview
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null)
   const [previewQuote, setPreviewQuote] = useState<Quote | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Modal Delete
+  const [deletingQuote, setDeletingQuote] = useState<Quote | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Toast
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const [formData, setFormData] = useState({
     title: '',
-    client_id: mockClients[0]?.id || '',
+    client_id: '',
     amount: '',
     status: 'Borrador' as QuoteStatus,
   })
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
+  const loadData = async () => {
+    setLoading(true)
+    const [quoteData, clientData] = await Promise.all([
+      getQuotes(),
+      getClients(),
+    ])
+    setQuotes(quoteData)
+    setClients(clientData)
+    if (clientData.length > 0 && !formData.client_id) {
+      setFormData(prev => ({ ...prev, client_id: clientData[0].id }))
+    }
+    setLoading(false)
   }
 
+  useEffect(() => {
+    loadData()
+  }, [])
+
   const filteredQuotes = quotes.filter(q => {
-    const client = mockClients.find(c => c.id === q.client_id)
+    const clientName = q.client?.company || q.client?.name || ''
     const matchesSearch =
       q.title.toLowerCase().includes(search.toLowerCase()) ||
-      client?.company.toLowerCase().includes(search.toLowerCase()) ||
-      client?.name.toLowerCase().includes(search.toLowerCase())
+      clientName.toLowerCase().includes(search.toLowerCase())
     const matchesStatus = filterStatus === 'todos' || q.status === filterStatus
     return matchesSearch && matchesStatus
   })
@@ -64,7 +94,7 @@ export default function QuotesPage() {
     setEditingQuote(null)
     setFormData({
       title: '',
-      client_id: mockClients[0]?.id || '',
+      client_id: clients[0]?.id || '',
       amount: '',
       status: 'Borrador',
     })
@@ -82,38 +112,55 @@ export default function QuotesPage() {
     setIsModalOpen(true)
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (editingQuote) {
-      setQuotes(
-        quotes.map(q =>
-          q.id === editingQuote.id
-            ? { ...q, ...formData, amount: Number(formData.amount) }
-            : q
-        )
-      )
-      showToast('Presupuesto actualizado')
-    } else {
-      const newQuote: Quote = {
-        id: Date.now().toString(),
-        client_id: formData.client_id,
-        title: formData.title,
-        amount: Number(formData.amount),
-        status: formData.status,
-        created_at: new Date().toISOString(),
+    setSubmitting(true)
+    try {
+      if (editingQuote) {
+        await updateQuoteRecord(editingQuote.id, {
+          title: formData.title,
+          client_id: formData.client_id,
+          amount: Number(formData.amount),
+          status: formData.status,
+        })
+        showToast('Presupuesto actualizado con éxito')
+      } else {
+        await createQuoteRecord({
+          client_id: formData.client_id || (clients[0]?.id ?? ''),
+          title: formData.title,
+          amount: Number(formData.amount),
+          status: formData.status,
+        })
+        showToast('Presupuesto creado con éxito')
       }
-      setQuotes([newQuote, ...quotes])
-      showToast('Presupuesto creado')
+      setIsModalOpen(false)
+      await loadData()
+    } catch (err: any) {
+      showToast('Error en Supabase: ' + err.message, 'error')
+    } finally {
+      setSubmitting(false)
     }
-    setIsModalOpen(false)
   }
 
-  const handleDelete = (id: string) => {
-    setQuotes(quotes.filter(q => q.id !== id))
-    showToast('Presupuesto eliminado')
+  const confirmDeleteQuote = async () => {
+    if (!deletingQuote) return
+    setDeleteLoading(true)
+    try {
+      const ok = await deleteQuoteRecord(deletingQuote.id)
+      if (ok) {
+        setQuotes(quotes.filter(q => q.id !== deletingQuote.id))
+        showToast(`Presupuesto "${deletingQuote.title}" eliminado`, 'info')
+      } else {
+        showToast('No se pudo eliminar el presupuesto', 'error')
+      }
+    } catch (err: any) {
+      showToast('Error al eliminar: ' + err.message, 'error')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingQuote(null)
+    }
   }
 
-  // PDF Export simulator / printer architecture
   const handlePrintPDF = (quote: Quote) => {
     setPreviewQuote(quote)
   }
@@ -121,19 +168,18 @@ export default function QuotesPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Toast */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 right-6 z-50 px-4 py-3 rounded-xl bg-gradient-to-r from-[#F59E0B] to-[#06B6D4] text-white font-semibold text-sm shadow-modal flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            {toastMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deletingQuote}
+        title="¿Eliminar Presupuesto?"
+        description={`¿Estás seguro de que deseas eliminar permanentemente la cotización "${deletingQuote?.title}"?`}
+        confirmText="Eliminar Presupuesto"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteQuote}
+        onCancel={() => setDeletingQuote(null)}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -142,7 +188,7 @@ export default function QuotesPage() {
             Gestión de Presupuestos
           </h1>
           <p className="text-sm text-[#94A3B8] mt-1">
-            Cotizaciones, estados de facturación y previsualización de documentos PDF.
+            Cotizaciones, estados de facturación y vista previa de documentos.
           </p>
         </div>
         <button
@@ -187,86 +233,93 @@ export default function QuotesPage() {
       {/* Quotes Table */}
       <div className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-[#1E2A3A] text-[11px] font-semibold text-[#4B6A8A] uppercase tracking-wider bg-[#0F172A]/50">
-                <th className="py-3.5 px-4">Presupuesto</th>
-                <th className="py-3.5 px-4">Cliente</th>
-                <th className="py-3.5 px-4">Monto ($)</th>
-                <th className="py-3.5 px-4">Estado</th>
-                <th className="py-3.5 px-4">Fecha</th>
-                <th className="py-3.5 px-4 text-right">Acciones / PDF</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1E2A3A]/60 text-sm">
-              {filteredQuotes.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-[#94A3B8]">
-                    No se encontraron presupuestos.
-                  </td>
+          {loading ? (
+            <div className="p-12 text-center text-[#94A3B8] flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-[#F59E0B]" />
+              Cargando presupuestos desde Supabase...
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#1E2A3A] text-[11px] font-semibold text-[#4B6A8A] uppercase tracking-wider bg-[#0F172A]/50">
+                  <th className="py-3.5 px-4">Presupuesto</th>
+                  <th className="py-3.5 px-4">Cliente</th>
+                  <th className="py-3.5 px-4">Monto ($)</th>
+                  <th className="py-3.5 px-4">Estado</th>
+                  <th className="py-3.5 px-4">Fecha</th>
+                  <th className="py-3.5 px-4 text-right">Acciones / PDF</th>
                 </tr>
-              ) : (
-                filteredQuotes.map(q => {
-                  const client = mockClients.find(c => c.id === q.client_id)
-                  return (
-                    <tr key={q.id} className="hover:bg-[#1E2A3A]/40 transition-colors group">
-                      <td className="py-3.5 px-4">
-                        <p className="font-semibold text-white group-hover:text-[#06B6D4] transition-colors">
-                          {q.title}
-                        </p>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-1.5 text-xs text-[#94A3B8]">
-                          <Building className="w-3.5 h-3.5 text-[#4B6A8A]" />
-                          {client?.company || 'Cliente'}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-white font-display">
-                        ${q.amount.toLocaleString()}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider border ${statusBadges[q.status]}`}>
-                          {q.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
-                        {new Date(q.created_at).toLocaleDateString('es-AR', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handlePrintPDF(q)}
-                            title="Previsualizar PDF / Imprimir"
-                            className="p-1.5 rounded-lg text-[#06B6D4] hover:bg-[#06B6D4]/10 transition-colors"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openEditModal(q)}
-                            title="Editar"
-                            className="p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(q.id)}
-                            title="Eliminar"
-                            className="p-1.5 rounded-lg text-[#EF4444] hover:bg-[#EF4444]/10"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-[#1E2A3A]/60 text-sm">
+                {filteredQuotes.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-[#94A3B8]">
+                      No se encontraron presupuestos.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredQuotes.map(q => {
+                    const clientName = q.client?.company || q.client?.name || 'Cliente'
+                    return (
+                      <tr key={q.id} className="hover:bg-[#1E2A3A]/40 transition-colors group">
+                        <td className="py-3.5 px-4">
+                          <p className="font-semibold text-white group-hover:text-[#06B6D4] transition-colors">
+                            {q.title}
+                          </p>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1.5 text-xs text-[#94A3B8]">
+                            <Building className="w-3.5 h-3.5 text-[#4B6A8A]" />
+                            {clientName}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-white font-display">
+                          ${q.amount.toLocaleString()}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider border ${statusBadges[q.status]}`}>
+                            {q.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
+                          {new Date(q.created_at).toLocaleDateString('es-AR', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handlePrintPDF(q)}
+                              title="Previsualizar PDF / Imprimir"
+                              className="p-1.5 rounded-lg text-[#06B6D4] hover:bg-[#06B6D4]/10 transition-colors"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openEditModal(q)}
+                              title="Editar"
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A]"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setDeletingQuote(q)}
+                              title="Eliminar"
+                              className="p-1.5 rounded-lg text-[#EF4444] hover:bg-[#EF4444]/10"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -322,7 +375,7 @@ export default function QuotesPage() {
                     onChange={e => setFormData({ ...formData, client_id: e.target.value })}
                     className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
                   >
-                    {mockClients.map(c => (
+                    {clients.map(c => (
                       <option key={c.id} value={c.id}>
                         {c.company} ({c.name})
                       </option>
@@ -370,8 +423,10 @@ export default function QuotesPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan"
+                    disabled={submitting}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan flex items-center gap-2 disabled:opacity-50"
                   >
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     Guardar
                   </button>
                 </div>
@@ -381,7 +436,7 @@ export default function QuotesPage() {
         )}
       </AnimatePresence>
 
-      {/* PDF Document Preview Modal */}
+      {/* PDF Preview Modal */}
       <AnimatePresence>
         {previewQuote && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -398,7 +453,6 @@ export default function QuotesPage() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="bg-[#0F172A] border border-[#1E2A3A] w-full max-w-2xl rounded-2xl p-8 relative z-10 shadow-modal overflow-hidden text-white"
             >
-              {/* Top bar controls */}
               <div className="flex items-center justify-between border-b border-[#1E2A3A] pb-4 mb-6">
                 <span className="text-xs font-mono text-[#06B6D4] uppercase tracking-wider">
                   TEMTECH Studio — Documento PDF Presupuesto
@@ -419,7 +473,6 @@ export default function QuotesPage() {
                 </div>
               </div>
 
-              {/* PDF Document Card preview */}
               <div className="bg-[#111827] p-8 rounded-xl border border-[#1E2A3A] space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -438,7 +491,7 @@ export default function QuotesPage() {
                   <div>
                     <span className="text-[#4B6A8A] block">CLIENTE:</span>
                     <strong className="text-white">
-                      {mockClients.find(c => c.id === previewQuote.client_id)?.company}
+                      {previewQuote.client?.company || previewQuote.client?.name || 'Cliente'}
                     </strong>
                   </div>
                   <div>

@@ -1,20 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   DragStartEvent,
   DragEndEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
-  arrayMove,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable,
@@ -22,17 +23,24 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FolderKanban,
   Plus,
   Building,
   Calendar,
-  DollarSign,
   GripVertical,
+  Trash2,
   X,
-  CheckCircle2,
+  Loader2,
 } from 'lucide-react'
-import { mockProjects, mockClients } from '@/lib/mock-data'
-import { Project, ProjectStatus } from '@/types'
+import {
+  getProjects,
+  createProjectRecord,
+  updateProjectStatus,
+  deleteProjectRecord,
+} from '@/services/projects'
+import { getClients } from '@/services/clients'
+import { Project, ProjectStatus, Client } from '@/types'
+import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Toast, ToastState } from '@/components/shared/Toast'
 
 const COLUMNS: { id: ProjectStatus; title: string; color: string }[] = [
   { id: 'Pendiente', title: 'Pendiente', color: '#F59E0B' },
@@ -41,8 +49,15 @@ const COLUMNS: { id: ProjectStatus; title: string; color: string }[] = [
   { id: 'Entregado', title: 'Entregado', color: '#22C55E' },
 ]
 
-// Project Card item component inside sortable
-function ProjectCard({ project, isDragging = false }: { project: Project; isDragging?: boolean }) {
+function ProjectCard({
+  project,
+  isDragging = false,
+  onDelete,
+}: {
+  project: Project
+  isDragging?: boolean
+  onDelete?: (project: Project) => void
+}) {
   const {
     attributes,
     listeners,
@@ -56,7 +71,7 @@ function ProjectCard({ project, isDragging = false }: { project: Project; isDrag
     transition,
   }
 
-  const clientName = mockClients.find(c => c.id === project.client_id)?.company || 'Cliente TEMTECH'
+  const clientName = project.client?.company || 'Cliente'
 
   return (
     <div
@@ -68,8 +83,23 @@ function ProjectCard({ project, isDragging = false }: { project: Project; isDrag
     >
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold text-white leading-snug">{project.name}</h4>
-        <div {...attributes} {...listeners} className="text-[#4B6A8A] hover:text-[#94A3B8] p-1">
-          <GripVertical className="w-4 h-4" />
+        <div className="flex items-center gap-1">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                onDelete(project)
+              }}
+              className="text-[#4B6A8A] hover:text-[#EF4444] p-1 transition-colors"
+              title="Eliminar proyecto"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <div {...attributes} {...listeners} className="text-[#4B6A8A] hover:text-[#94A3B8] p-1">
+            <GripVertical className="w-4 h-4" />
+          </div>
         </div>
       </div>
 
@@ -100,38 +130,118 @@ function ProjectCard({ project, isDragging = false }: { project: Project; isDrag
   )
 }
 
+function KanbanColumn({
+  column,
+  projects,
+  onDeleteProject,
+}: {
+  column: { id: ProjectStatus; title: string; color: string }
+  projects: Project[]
+  onDeleteProject: (p: Project) => void
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`glass-card p-4 flex flex-col h-full min-h-[500px] border transition-all ${
+        isOver ? 'border-[#06B6D4] bg-[#06B6D4]/5' : 'border-[#1E2A3A]'
+      }`}
+    >
+      <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#1E2A3A]">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: column.color }} />
+          <h3 className="text-sm font-bold text-white">{column.title}</h3>
+        </div>
+        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#1E2A3A] text-[#94A3B8]">
+          {projects.length}
+        </span>
+      </div>
+
+      <SortableContext
+        id={column.id}
+        items={projects.map(p => p.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="flex-1 space-y-3 kanban-column">
+          {projects.length === 0 ? (
+            <div className="h-32 border border-dashed border-[#1E2A3A] rounded-xl flex items-center justify-center text-xs text-[#4B6A8A]">
+              Arrastra un proyecto aquí
+            </div>
+          ) : (
+            projects.map(proj => (
+              <ProjectCard
+                key={proj.id}
+                project={proj}
+                onDelete={onDeleteProject}
+              />
+            ))
+          )}
+        </div>
+      </SortableContext>
+    </div>
+  )
+}
+
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>(mockProjects)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeProject, setActiveProject] = useState<Project | null>(null)
 
-  // Modal
+  // Modal Create
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Modal Delete
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Toast
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
   const [formData, setFormData] = useState({
     name: '',
-    client_id: mockClients[0]?.id || '',
+    client_id: '',
     description: '',
     status: 'Pendiente' as ProjectStatus,
     budget: '',
   })
-
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
+  const loadData = async () => {
+    setLoading(true)
+    const [projData, clientData] = await Promise.all([
+      getProjects(),
+      getClients(),
+    ])
+    setProjects(projData)
+    setClients(clientData)
+    if (clientData.length > 0 && !formData.client_id) {
+      setFormData(prev => ({ ...prev, client_id: clientData[0].id }))
+    }
+    setLoading(false)
   }
+
+  useEffect(() => {
+    loadData()
+  }, [])
 
   const handleDragStart = (event: DragStartEvent) => {
     const proj = projects.find(p => p.id === event.active.id)
     if (proj) setActiveProject(proj)
   }
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveProject(null)
 
@@ -140,12 +250,13 @@ export default function ProjectsPage() {
     const activeId = active.id.toString()
     const overId = over.id.toString()
 
-    // Find target column or target project
     let targetStatus: ProjectStatus | null = null
 
+    // Check if over ID is direct column status (e.g. 'En Desarrollo', 'Entregado')
     if (COLUMNS.some(c => c.id === overId)) {
       targetStatus = overId as ProjectStatus
     } else {
+      // Check if over ID is a project inside a column
       const overProj = projects.find(p => p.id === overId)
       if (overProj) targetStatus = overProj.status
     }
@@ -154,53 +265,84 @@ export default function ProjectsPage() {
       setProjects(prev =>
         prev.map(p => (p.id === activeId ? { ...p, status: targetStatus! } : p))
       )
-      showToast(`Estado de proyecto actualizado a "${targetStatus}"`)
+      await updateProjectStatus(activeId, targetStatus)
+      showToast(`Estado de proyecto actualizado a "${targetStatus}"`, 'info')
     }
   }
 
-  const handleCreateProject = (e: React.FormEvent) => {
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newProj: Project = {
-      id: Date.now().toString(),
-      client_id: formData.client_id,
-      name: formData.name,
-      description: formData.description,
-      status: formData.status,
-      budget: formData.budget ? Number(formData.budget) : null,
-      start_date: new Date().toISOString().split('T')[0],
-      end_date: null,
-      created_at: new Date().toISOString(),
+    setSubmitting(true)
+    try {
+      await createProjectRecord({
+        client_id: formData.client_id || (clients[0]?.id ?? null),
+        name: formData.name,
+        description: formData.description,
+        status: formData.status,
+        budget: formData.budget ? Number(formData.budget) : null,
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: null,
+      })
+      setIsModalOpen(false)
+      showToast('Proyecto creado con éxito')
+      await loadData()
+    } catch (err: any) {
+      showToast('Error en Supabase: ' + err.message, 'error')
+    } finally {
+      setSubmitting(false)
     }
-    setProjects([newProj, ...projects])
-    setIsModalOpen(false)
-    showToast('Proyecto creado exitosamente')
+  }
+
+  const confirmDeleteProject = async () => {
+    if (!deletingProject) return
+    setDeleteLoading(true)
+    try {
+      const ok = await deleteProjectRecord(deletingProject.id)
+      if (ok) {
+        setProjects(projects.filter(p => p.id !== deletingProject.id))
+        showToast(`Proyecto "${deletingProject.name}" eliminado`, 'info')
+      } else {
+        showToast('No se pudo eliminar el proyecto', 'error')
+      }
+    } catch (err: any) {
+      showToast('Error al eliminar: ' + err.message, 'error')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingProject(null)
+    }
+  }
+
+  // Custom collision detection combining pointerWithin & rectIntersection
+  const customCollisionDetection = (args: any) => {
+    const pointerCollisions = pointerWithin(args)
+    if (pointerCollisions.length > 0) return pointerCollisions
+    return rectIntersection(args)
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Toast */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 right-6 z-50 px-4 py-3 rounded-xl bg-gradient-to-r from-[#06B6D4] to-[#8B5CF6] text-white font-semibold text-sm shadow-modal flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            {toastMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deletingProject}
+        title="¿Eliminar Proyecto?"
+        description={`¿Estás seguro de que deseas eliminar permanentemente el proyecto "${deletingProject?.name}"? Esta acción removerá el proyecto y sus tareas asociadas.`}
+        confirmText="Eliminar Proyecto"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteProject}
+        onCancel={() => setDeletingProject(null)}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold text-white tracking-tight">
-            Proyectos (Kanban)
+            Proyectos (Kanban + Supabase)
           </h1>
           <p className="text-sm text-[#94A3B8] mt-1">
-            Arrastra y suelta proyectos entre las distintas columnas del ciclo de vida.
+            Arrastra proyectos entre estados con actualización automática en la base de datos.
           </p>
         </div>
         <button
@@ -212,56 +354,40 @@ export default function ProjectsPage() {
         </button>
       </div>
 
-      {/* Kanban Board */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
-          {COLUMNS.map(col => {
-            const colProjects = projects.filter(p => p.status === col.id)
-            return (
-              <div
-                key={col.id}
-                className="glass-card p-4 flex flex-col h-full min-h-[500px] border border-[#1E2A3A]"
-              >
-                {/* Column header */}
-                <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#1E2A3A]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
-                    <h3 className="text-sm font-bold text-white">{col.title}</h3>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#1E2A3A] text-[#94A3B8]">
-                    {colProjects.length}
-                  </span>
-                </div>
-
-                {/* Column sortable context */}
-                <SortableContext
-                  id={col.id}
-                  items={colProjects.map(p => p.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="flex-1 space-y-3 kanban-column">
-                    {colProjects.map(proj => (
-                      <ProjectCard key={proj.id} project={proj} />
-                    ))}
-                  </div>
-                </SortableContext>
-              </div>
-            )
-          })}
+      {loading ? (
+        <div className="p-12 text-center text-[#94A3B8] flex items-center justify-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin text-[#06B6D4]" />
+          Cargando proyectos desde Supabase...
         </div>
+      ) : (
+        /* Kanban Board */
+        <DndContext
+          sensors={sensors}
+          collisionDetection={customCollisionDetection}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
+            {COLUMNS.map(col => {
+              const colProjects = projects.filter(p => p.status === col.id)
+              return (
+                <KanbanColumn
+                  key={col.id}
+                  column={col}
+                  projects={colProjects}
+                  onDeleteProject={p => setDeletingProject(p)}
+                />
+              )
+            })}
+          </div>
 
-        {/* Drag Overlay */}
-        <DragOverlay>
-          {activeProject ? <ProjectCard project={activeProject} isDragging /> : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay>
+            {activeProject ? <ProjectCard project={activeProject} isDragging /> : null}
+          </DragOverlay>
+        </DndContext>
+      )}
 
-      {/* Modal */}
+      {/* Modal Create */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -311,7 +437,7 @@ export default function ProjectsPage() {
                     onChange={e => setFormData({ ...formData, client_id: e.target.value })}
                     className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#06B6D4]"
                   >
-                    {mockClients.map(c => (
+                    {clients.map(c => (
                       <option key={c.id} value={c.id}>
                         {c.company} ({c.name})
                       </option>
@@ -371,8 +497,10 @@ export default function ProjectsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan"
+                    disabled={submitting}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white glow-cyan flex items-center gap-2 disabled:opacity-50"
                   >
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     Crear Proyecto
                   </button>
                 </div>

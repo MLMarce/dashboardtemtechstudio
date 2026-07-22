@@ -1,25 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Users,
   Plus,
   Search,
   Filter,
-  MoreVertical,
   Edit2,
   Trash2,
   UserCheck,
   Mail,
   Phone,
-  MessageSquare,
-  Calendar,
   X,
-  CheckCircle2,
+  Loader2,
 } from 'lucide-react'
-import { mockLeads, mockClients } from '@/lib/mock-data'
+import {
+  getLeads,
+  createLead,
+  updateLead,
+  deleteLead,
+  convertLeadToClient,
+} from '@/services/leads'
 import { Lead, LeadStatus } from '@/types'
+import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Toast, ToastState } from '@/components/shared/Toast'
 
 const statusBadgeStyles: Record<LeadStatus, string> = {
   nuevo: 'badge-nuevo',
@@ -40,33 +44,49 @@ const statusLabels: Record<LeadStatus, string> = {
 }
 
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>(mockLeads)
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('todos')
-  
-  // Modal state
+
+  // Modal Create/Edit
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
-  
+  const [submitting, setSubmitting] = useState(false)
+
+  // Modal Delete confirmation
+  const [deletingLead, setDeletingLead] = useState<Lead | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Toast
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 4000)
+  }
+
   // Form fields
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
-    service: '',
+    service: 'Desarrollo Web',
     message: '',
     status: 'nuevo' as LeadStatus,
   })
 
-  // Conversion notification toast state
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 4000)
+  const loadData = async () => {
+    setLoading(true)
+    const data = await getLeads()
+    setLeads(data)
+    setLoading(false)
   }
 
-  // Filter leads
+  useEffect(() => {
+    loadData()
+  }, [])
+
   const filteredLeads = leads.filter(lead => {
     const matchesSearch =
       lead.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -103,81 +123,80 @@ export default function LeadsPage() {
     setIsModalOpen(true)
   }
 
-  const handleSaveLead = (e: React.FormEvent) => {
+  const handleSaveLead = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (editingLead) {
-      // Update
-      const updated = leads.map(l =>
-        l.id === editingLead.id ? { ...l, ...formData } : l
-      )
-      setLeads(updated)
-      
-      // Auto convert to client if status set to 'ganado'
-      if (formData.status === 'ganado' && editingLead.status !== 'ganado') {
-        convertToClient({ ...editingLead, ...formData })
+    setSubmitting(true)
+    try {
+      if (editingLead) {
+        await updateLead(editingLead.id, formData)
+        if (formData.status === 'ganado' && editingLead.status !== 'ganado') {
+          await convertLeadToClient({ ...editingLead, ...formData })
+          showToast('¡Lead actualizado y convertido a Cliente en Supabase!')
+        } else {
+          showToast('Lead actualizado con éxito')
+        }
       } else {
-        showToast('Lead actualizado con éxito')
+        const created = await createLead(formData)
+        if (created && formData.status === 'ganado') {
+          await convertLeadToClient(created)
+          showToast('¡Lead creado y convertido a Cliente!')
+        } else {
+          showToast('Lead guardado exitosamente')
+        }
       }
-    } else {
-      // Create
-      const newLead: Lead = {
-        id: Date.now().toString(),
-        ...formData,
-        created_at: new Date().toISOString(),
-      }
-      setLeads([newLead, ...leads])
-      
-      if (formData.status === 'ganado') {
-        convertToClient(newLead)
-      } else {
-        showToast('Lead creado con éxito')
-      }
+      setIsModalOpen(false)
+      await loadData()
+    } catch (err: any) {
+      showToast('Error en Supabase: ' + err.message, 'error')
+    } finally {
+      setSubmitting(false)
     }
-    setIsModalOpen(false)
   }
 
-  const handleDeleteLead = (id: string) => {
-    setLeads(leads.filter(l => l.id !== id))
-    showToast('Lead eliminado')
+  const confirmDeleteLead = async () => {
+    if (!deletingLead) return
+    setDeleteLoading(true)
+    try {
+      const ok = await deleteLead(deletingLead.id)
+      if (ok) {
+        setLeads(leads.filter(l => l.id !== deletingLead.id))
+        showToast(`Lead "${deletingLead.name}" eliminado con éxito`, 'info')
+      } else {
+        showToast('No se pudo eliminar el lead', 'error')
+      }
+    } catch (err: any) {
+      showToast('Error al eliminar: ' + err.message, 'error')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingLead(null)
+    }
   }
 
-  const convertToClient = (lead: Lead) => {
-    // 1. Create client record
-    const newClient = {
-      id: Date.now().toString(),
-      name: lead.name,
-      company: `${lead.name} Corp`,
-      email: lead.email,
-      phone: lead.phone,
-      notes: `Convertido automáticamente desde Lead (${lead.service})`,
-      created_at: new Date().toISOString(),
+  const handleConvert = async (lead: Lead) => {
+    try {
+      await convertLeadToClient(lead)
+      showToast(`¡Lead "${lead.name}" convertido a Cliente en Supabase!`)
+      await loadData()
+    } catch (err: any) {
+      showToast('Error convirtiendo lead: ' + err.message, 'error')
     }
-    mockClients.push(newClient)
-
-    // 2. Update lead status to 'ganado'
-    setLeads(prev =>
-      prev.map(l => (l.id === lead.id ? { ...l, status: 'ganado' } : l))
-    )
-
-    showToast(`¡Lead "${lead.name}" convertido a Cliente automáticamente!`)
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Toast Notification */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 right-6 z-50 px-4 py-3 rounded-xl bg-gradient-to-r from-[#06B6D4] to-[#8B5CF6] text-white font-semibold text-sm shadow-modal flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            {toastMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
+      {/* Custom Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deletingLead}
+        title="¿Eliminar Lead?"
+        description={`¿Estás seguro de que deseas eliminar permanentemente a "${deletingLead?.name}"? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar Lead"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteLead}
+        onCancel={() => setDeletingLead(null)}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -200,7 +219,6 @@ export default function LeadsPage() {
 
       {/* Search and Filters */}
       <div className="glass-card p-4 flex flex-col md:flex-row items-center gap-4">
-        {/* Search */}
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B6A8A]" />
           <input
@@ -212,7 +230,6 @@ export default function LeadsPage() {
           />
         </div>
 
-        {/* Status filter tabs */}
         <div className="flex items-center gap-1 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
           <Filter className="w-4 h-4 text-[#4B6A8A] mr-1 hidden md:block" />
           {[
@@ -242,100 +259,107 @@ export default function LeadsPage() {
       {/* Leads Table */}
       <div className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-[#1E2A3A] text-[11px] font-semibold text-[#4B6A8A] uppercase tracking-wider bg-[#0F172A]/50">
-                <th className="py-3.5 px-4">Lead</th>
-                <th className="py-3.5 px-4">Contacto</th>
-                <th className="py-3.5 px-4">Servicio</th>
-                <th className="py-3.5 px-4">Estado</th>
-                <th className="py-3.5 px-4">Fecha</th>
-                <th className="py-3.5 px-4 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1E2A3A]/60 text-sm">
-              {filteredLeads.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-[#94A3B8]">
-                    No se encontraron leads con los filtros actuales.
-                  </td>
+          {loading ? (
+            <div className="p-12 text-center text-[#94A3B8] flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-[#06B6D4]" />
+              Cargando leads desde Supabase...
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#1E2A3A] text-[11px] font-semibold text-[#4B6A8A] uppercase tracking-wider bg-[#0F172A]/50">
+                  <th className="py-3.5 px-4">Lead</th>
+                  <th className="py-3.5 px-4">Contacto</th>
+                  <th className="py-3.5 px-4">Servicio</th>
+                  <th className="py-3.5 px-4">Estado</th>
+                  <th className="py-3.5 px-4">Fecha</th>
+                  <th className="py-3.5 px-4 text-right">Acciones</th>
                 </tr>
-              ) : (
-                filteredLeads.map(lead => (
-                  <tr key={lead.id} className="hover:bg-[#1E2A3A]/40 transition-colors group">
-                    <td className="py-3.5 px-4">
-                      <div>
-                        <p className="font-semibold text-white group-hover:text-[#06B6D4] transition-colors">
-                          {lead.name}
-                        </p>
-                        {lead.message && (
-                          <p className="text-xs text-[#94A3B8] line-clamp-1 mt-0.5">
-                            "{lead.message}"
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-0.5 text-xs text-[#94A3B8]">
-                        <div className="flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-[#4B6A8A]" />
-                          {lead.email}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-[#4B6A8A]" />
-                          {lead.phone}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="px-2.5 py-1 rounded-lg bg-[#1E2A3A] text-white text-xs font-medium">
-                        {lead.service}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`badge ${statusBadgeStyles[lead.status]}`}>
-                        {statusLabels[lead.status]}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
-                      {new Date(lead.created_at).toLocaleDateString('es-AR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      })}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {lead.status !== 'ganado' && (
-                          <button
-                            onClick={() => convertToClient(lead)}
-                            title="Convertir a Cliente"
-                            className="p-1.5 rounded-lg text-[#22C55E] hover:bg-[#22C55E]/10 transition-colors"
-                          >
-                            <UserCheck className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => openEditModal(lead)}
-                          title="Editar"
-                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A] transition-colors"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteLead(lead.id)}
-                          title="Eliminar"
-                          className="p-1.5 rounded-lg text-[#EF4444] hover:bg-[#EF4444]/10 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+              </thead>
+              <tbody className="divide-y divide-[#1E2A3A]/60 text-sm">
+                {filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-[#94A3B8]">
+                      No hay leads registrados en la base de datos.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredLeads.map(lead => (
+                    <tr key={lead.id} className="hover:bg-[#1E2A3A]/40 transition-colors group">
+                      <td className="py-3.5 px-4">
+                        <div>
+                          <p className="font-semibold text-white group-hover:text-[#06B6D4] transition-colors">
+                            {lead.name}
+                          </p>
+                          {lead.message && (
+                            <p className="text-xs text-[#94A3B8] line-clamp-1 mt-0.5">
+                              "{lead.message}"
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="space-y-0.5 text-xs text-[#94A3B8]">
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-[#4B6A8A]" />
+                            {lead.email}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-[#4B6A8A]" />
+                            {lead.phone}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="px-2.5 py-1 rounded-lg bg-[#1E2A3A] text-white text-xs font-medium">
+                          {lead.service}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className={`badge ${statusBadgeStyles[lead.status]}`}>
+                          {statusLabels[lead.status]}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-[#4B6A8A]">
+                        {new Date(lead.created_at).toLocaleDateString('es-AR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                        })}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {lead.status !== 'ganado' && (
+                            <button
+                              onClick={() => handleConvert(lead)}
+                              title="Convertir a Cliente"
+                              className="p-1.5 rounded-lg text-[#22C55E] hover:bg-[#22C55E]/10 transition-colors"
+                            >
+                              <UserCheck className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openEditModal(lead)}
+                            title="Editar"
+                            className="p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A] transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeletingLead(lead)}
+                            title="Eliminar"
+                            className="p-1.5 rounded-lg text-[#EF4444] hover:bg-[#EF4444]/10 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -467,8 +491,10 @@ export default function LeadsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white hover:opacity-90 glow-cyan"
+                    disabled={submitting}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#06B6D4] text-white hover:opacity-90 glow-cyan flex items-center gap-2 disabled:opacity-50"
                   >
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     Guardar
                   </button>
                 </div>

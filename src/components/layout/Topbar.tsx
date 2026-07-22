@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Menu,
@@ -11,6 +11,8 @@ import {
   LogOut,
   Settings,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 interface TopbarProps {
   onMenuClick: () => void
@@ -18,8 +20,33 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick, title }: TopbarProps) {
+  const router = useRouter()
+  const supabase = createClient()
+
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [userEmail, setUserEmail] = useState<string>('Usuario TEMTECH')
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data } = await supabase.auth.getUser()
+      if (data?.user?.email) {
+        setUserEmail(data.user.email)
+      }
+    }
+    loadUser()
+  }, [])
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
+
+  // Get avatar initials
+  const initials = userEmail
+    ? userEmail.substring(0, 2).toUpperCase()
+    : 'TT'
 
   return (
     <header className="sticky top-0 z-20 h-16 bg-[#0F172A]/80 backdrop-blur-md border-b border-[#1E2A3A] flex items-center px-4 md:px-6 gap-4">
@@ -109,11 +136,13 @@ export function Topbar({ onMenuClick, title }: TopbarProps) {
             className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl hover:bg-[#1E2A3A] transition-colors"
           >
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#06B6D4] to-[#8B5CF6] flex items-center justify-center text-white text-xs font-bold">
-              AD
+              {initials}
             </div>
-            <div className="hidden sm:block text-left">
-              <p className="text-xs font-semibold text-white leading-none">Admin TEMTECH</p>
-              <p className="text-[10px] text-[#4B6A8A] mt-0.5">admin@temtech.studio</p>
+            <div className="hidden sm:block text-left max-w-[140px]">
+              <p className="text-xs font-semibold text-white leading-none truncate">
+                {userEmail.split('@')[0]}
+              </p>
+              <p className="text-[10px] text-[#4B6A8A] mt-0.5 truncate">{userEmail}</p>
             </div>
             <ChevronDown className={`w-3.5 h-3.5 text-[#4B6A8A] transition-transform ${profileOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -125,28 +154,29 @@ export function Topbar({ onMenuClick, title }: TopbarProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-52 glass-card shadow-modal overflow-hidden"
+                className="absolute right-0 top-full mt-2 w-56 glass-card shadow-modal overflow-hidden"
               >
                 <div className="px-4 py-3 border-b border-[#1E2A3A]">
-                  <p className="text-sm font-semibold text-white">Admin TEMTECH</p>
-                  <p className="text-xs text-[#4B6A8A] mt-0.5">admin@temtech.studio</p>
+                  <p className="text-sm font-semibold text-white truncate">{userEmail.split('@')[0]}</p>
+                  <p className="text-xs text-[#4B6A8A] mt-0.5 truncate">{userEmail}</p>
                   <span className="mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#06B6D4]/15 text-[#06B6D4] border border-[#06B6D4]/30 uppercase tracking-wide">
-                    Admin
+                    Supabase User
                   </span>
                 </div>
                 <div className="py-1">
-                  {[
-                    { icon: User, label: 'Mi Perfil' },
-                    { icon: Settings, label: 'Configuración' },
-                  ].map(({ icon: Icon, label }) => (
-                    <button key={label} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A] transition-colors">
-                      <Icon className="w-4 h-4" />
-                      {label}
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => { router.push('/configuracion'); setProfileOpen(false) }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-[#94A3B8] hover:text-white hover:bg-[#1E2A3A] transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Configuración
+                  </button>
                 </div>
                 <div className="border-t border-[#1E2A3A] py-1">
-                  <button className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-[#EF4444] hover:bg-[#EF4444]/10 transition-colors">
+                  <button
+                    onClick={handleSignOut}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-[#EF4444] hover:bg-[#EF4444]/10 transition-colors"
+                  >
                     <LogOut className="w-4 h-4" />
                     Cerrar sesión
                   </button>

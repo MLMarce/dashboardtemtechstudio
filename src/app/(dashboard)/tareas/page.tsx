@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   DragStartEvent,
   DragEndEvent,
 } from '@dnd-kit/core'
@@ -21,16 +23,22 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  CheckSquare,
   Plus,
   GripVertical,
-  AlertCircle,
-  Clock,
-  CheckCircle2,
+  Trash2,
   X,
+  Loader2,
 } from 'lucide-react'
-import { mockTasks, mockProjects } from '@/lib/mock-data'
-import { Task, TaskStatus, TaskPriority } from '@/types'
+import {
+  getTasks,
+  createTaskRecord,
+  updateTaskStatus,
+  deleteTaskRecord,
+} from '@/services/tasks'
+import { getProjects } from '@/services/projects'
+import { Task, TaskStatus, TaskPriority, Project } from '@/types'
+import { ConfirmModal } from '@/components/shared/ConfirmModal'
+import { Toast, ToastState } from '@/components/shared/Toast'
 
 const COLUMNS: { id: TaskStatus; title: string; color: string }[] = [
   { id: 'Pendiente', title: 'Pendiente', color: '#F59E0B' },
@@ -46,7 +54,15 @@ const priorityBadges: Record<TaskPriority, string> = {
   urgente: 'bg-red-500/20 text-red-400 border-red-500/30',
 }
 
-function TaskCard({ task, isDragging = false }: { task: Task; isDragging?: boolean }) {
+function TaskCard({
+  task,
+  isDragging = false,
+  onDelete,
+}: {
+  task: Task
+  isDragging?: boolean
+  onDelete?: (task: Task) => void
+}) {
   const {
     attributes,
     listeners,
@@ -60,7 +76,7 @@ function TaskCard({ task, isDragging = false }: { task: Task; isDragging?: boole
     transition,
   }
 
-  const projName = mockProjects.find(p => p.id === task.project_id)?.name || 'General'
+  const projName = task.project?.name || 'General'
 
   return (
     <div
@@ -72,8 +88,23 @@ function TaskCard({ task, isDragging = false }: { task: Task; isDragging?: boole
     >
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold text-white leading-snug">{task.title}</h4>
-        <div {...attributes} {...listeners} className="text-[#4B6A8A] hover:text-[#94A3B8] p-1">
-          <GripVertical className="w-4 h-4" />
+        <div className="flex items-center gap-1">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                onDelete(task)
+              }}
+              className="text-[#4B6A8A] hover:text-[#EF4444] p-1 transition-colors"
+              title="Eliminar tarea"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <div {...attributes} {...listeners} className="text-[#4B6A8A] hover:text-[#94A3B8] p-1">
+            <GripVertical className="w-4 h-4" />
+          </div>
         </div>
       </div>
 
@@ -93,38 +124,118 @@ function TaskCard({ task, isDragging = false }: { task: Task; isDragging?: boole
   )
 }
 
+function KanbanColumn({
+  column,
+  tasks,
+  onDeleteTask,
+}: {
+  column: { id: TaskStatus; title: string; color: string }
+  tasks: Task[]
+  onDeleteTask: (t: Task) => void
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`glass-card p-4 flex flex-col h-full min-h-[500px] border transition-all ${
+        isOver ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-[#1E2A3A]'
+      }`}
+    >
+      <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#1E2A3A]">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ background: column.color }} />
+          <h3 className="text-sm font-bold text-white">{column.title}</h3>
+        </div>
+        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#1E2A3A] text-[#94A3B8]">
+          {tasks.length}
+        </span>
+      </div>
+
+      <SortableContext
+        id={column.id}
+        items={tasks.map(t => t.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="flex-1 space-y-3 kanban-column">
+          {tasks.length === 0 ? (
+            <div className="h-32 border border-dashed border-[#1E2A3A] rounded-xl flex items-center justify-center text-xs text-[#4B6A8A]">
+              Arrastra una tarea aquí
+            </div>
+          ) : (
+            tasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onDelete={onDeleteTask}
+              />
+            ))
+          )}
+        </div>
+      </SortableContext>
+    </div>
+  )
+}
+
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>(mockTasks)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
 
-  // Modal
+  // Modal Create
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Modal Delete
+  const [deletingTask, setDeletingTask] = useState<Task | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Toast
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    project_id: mockProjects[0]?.id || '',
+    project_id: '',
     status: 'Pendiente' as TaskStatus,
     priority: 'media' as TaskPriority,
   })
-
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
+  const loadData = async () => {
+    setLoading(true)
+    const [taskData, projData] = await Promise.all([
+      getTasks(),
+      getProjects(),
+    ])
+    setTasks(taskData)
+    setProjects(projData)
+    if (projData.length > 0 && !formData.project_id) {
+      setFormData(prev => ({ ...prev, project_id: projData[0].id }))
+    }
+    setLoading(false)
   }
+
+  useEffect(() => {
+    loadData()
+  }, [])
 
   const handleDragStart = (event: DragStartEvent) => {
     const t = tasks.find(x => x.id === event.active.id)
     if (t) setActiveTask(t)
   }
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveTask(null)
 
@@ -135,63 +246,96 @@ export default function TasksPage() {
 
     let targetStatus: TaskStatus | null = null
 
+    // Check if dropped directly on a column
     if (COLUMNS.some(c => c.id === overId)) {
       targetStatus = overId as TaskStatus
     } else {
-      const overT = tasks.find(t => t.id === overId)
-      if (overT) targetStatus = overT.status
+      // Check if dropped on a task inside a column
+      const overTask = tasks.find(t => t.id === overId)
+      if (overTask) targetStatus = overTask.status
     }
 
     if (targetStatus) {
       setTasks(prev =>
         prev.map(t => (t.id === activeId ? { ...t, status: targetStatus! } : t))
       )
-      showToast(`Estado de tarea cambiado a "${targetStatus}"`)
+      await updateTaskStatus(activeId, targetStatus)
+      showToast(`Estado de tarea actualizado a "${targetStatus}"`, 'info')
     }
   }
 
-  const handleCreateTask = (e: React.FormEvent) => {
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newTask: Task = {
-      id: Date.now().toString(),
-      project_id: formData.project_id,
-      title: formData.title,
-      description: formData.description,
-      status: formData.status,
-      priority: formData.priority,
-      assigned_to: null,
-      created_at: new Date().toISOString(),
+    setSubmitting(true)
+    try {
+      await createTaskRecord({
+        project_id: formData.project_id || (projects[0]?.id ?? null),
+        title: formData.title,
+        description: formData.description,
+        status: formData.status,
+        priority: formData.priority,
+        assigned_to: null,
+      })
+      setIsModalOpen(false)
+      showToast('Tarea creada con éxito')
+      await loadData()
+    } catch (err: any) {
+      showToast('Error en Supabase: ' + err.message, 'error')
+    } finally {
+      setSubmitting(false)
     }
-    setTasks([newTask, ...tasks])
-    setIsModalOpen(false)
-    showToast('Tarea creada exitosamente')
+  }
+
+  const confirmDeleteTask = async () => {
+    if (!deletingTask) return
+    setDeleteLoading(true)
+    try {
+      const ok = await deleteTaskRecord(deletingTask.id)
+      if (ok) {
+        setTasks(tasks.filter(t => t.id !== deletingTask.id))
+        showToast(`Tarea "${deletingTask.title}" eliminada`, 'info')
+      } else {
+        showToast('No se pudo eliminar la tarea', 'error')
+      }
+    } catch (err: any) {
+      showToast('Error al eliminar: ' + err.message, 'error')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingTask(null)
+    }
+  }
+
+  // Custom collision detection: try pointer first, fall back to rect intersection
+  const customCollisionDetection = (args: any) => {
+    const pointerCollisions = pointerWithin(args)
+    if (pointerCollisions.length > 0) return pointerCollisions
+    return rectIntersection(args)
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Toast */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-20 right-6 z-50 px-4 py-3 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#06B6D4] text-white font-semibold text-sm shadow-modal flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            {toastMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deletingTask}
+        title="¿Eliminar Tarea?"
+        description={`¿Estás seguro de que deseas eliminar permanentemente la tarea "${deletingTask?.title}"?`}
+        confirmText="Eliminar Tarea"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteTask}
+        onCancel={() => setDeletingTask(null)}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold text-white tracking-tight">
-            Gestión de Tareas (Kanban)
+            Gestión de Tareas (Kanban + Supabase)
           </h1>
           <p className="text-sm text-[#94A3B8] mt-1">
-            Organiza tareas por estado: Pendiente, En progreso, Bloqueada o Completada.
+            Arrastra tareas para actualizar su progreso en tiempo real.
           </p>
         </div>
         <button
@@ -203,54 +347,38 @@ export default function TasksPage() {
         </button>
       </div>
 
-      {/* Kanban Board */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
-          {COLUMNS.map(col => {
-            const colTasks = tasks.filter(t => t.status === col.id)
-            return (
-              <div
-                key={col.id}
-                className="glass-card p-4 flex flex-col h-full min-h-[500px] border border-[#1E2A3A]"
-              >
-                {/* Column header */}
-                <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#1E2A3A]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
-                    <h3 className="text-sm font-bold text-white">{col.title}</h3>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#1E2A3A] text-[#94A3B8]">
-                    {colTasks.length}
-                  </span>
-                </div>
-
-                {/* Column sortable */}
-                <SortableContext
-                  id={col.id}
-                  items={colTasks.map(t => t.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="flex-1 space-y-3 kanban-column">
-                    {colTasks.map(task => (
-                      <TaskCard key={task.id} task={task} />
-                    ))}
-                  </div>
-                </SortableContext>
-              </div>
-            )
-          })}
+      {loading ? (
+        <div className="p-12 text-center text-[#94A3B8] flex items-center justify-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin text-[#8B5CF6]" />
+          Cargando tareas desde Supabase...
         </div>
+      ) : (
+        /* Kanban Board */
+        <DndContext
+          sensors={sensors}
+          collisionDetection={customCollisionDetection}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
+            {COLUMNS.map(col => {
+              const colTasks = tasks.filter(t => t.status === col.id)
+              return (
+                <KanbanColumn
+                  key={col.id}
+                  column={col}
+                  tasks={colTasks}
+                  onDeleteTask={t => setDeletingTask(t)}
+                />
+              )
+            })}
+          </div>
 
-        {/* Drag Overlay */}
-        <DragOverlay>
-          {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
-        </DragOverlay>
-      </DndContext>
+          <DragOverlay>
+            {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
+          </DragOverlay>
+        </DndContext>
+      )}
 
       {/* Modal */}
       <AnimatePresence>
@@ -302,7 +430,7 @@ export default function TasksPage() {
                     onChange={e => setFormData({ ...formData, project_id: e.target.value })}
                     className="w-full bg-[#0F172A] border border-[#1E2A3A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#8B5CF6]"
                   >
-                    {mockProjects.map(p => (
+                    {projects.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.name}
                       </option>
@@ -365,8 +493,10 @@ export default function TasksPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#8B5CF6] text-white glow-violet"
+                    disabled={submitting}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#8B5CF6] text-white glow-violet flex items-center gap-2 disabled:opacity-50"
                   >
+                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     Crear Tarea
                   </button>
                 </div>

@@ -1,7 +1,6 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 
-// Private routes that require authentication
 const PRIVATE_ROUTES = [
   '/dashboard',
   '/leads',
@@ -13,41 +12,57 @@ const PRIVATE_ROUTES = [
   '/configuracion',
 ]
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Next.js 16 Proxy Convention
-// When Supabase is ready, replace the mock auth check with:
-//
-// import { createServerClient } from '@supabase/ssr'
-// const supabase = createServerClient(
-//   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-//   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-//   { cookies: { ... } }
-// )
-// const { data: { user } } = await supabase.auth.getUser()
-// if (!user) return NextResponse.redirect(new URL('/login', request.url))
-// ─────────────────────────────────────────────────────────────────────────────
+export async function proxy(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({
+    request,
+  })
 
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-
-  const isPrivateRoute = PRIVATE_ROUTES.some(route =>
-    pathname === route || pathname.startsWith(`${route}/`)
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          )
+          supabaseResponse = NextResponse.next({
+            request,
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
   )
 
-  if (!isPrivateRoute) {
-    return NextResponse.next()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const { pathname } = request.nextUrl
+  const isPrivateRoute = PRIVATE_ROUTES.some(
+    route => pathname === route || pathname.startsWith(`${route}/`)
+  )
+
+  if (isPrivateRoute && !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirect', pathname)
+    return NextResponse.redirect(url)
   }
 
-  // Mock auth: check for a session cookie
-  const sessionCookie = request.cookies.get('temtech-session')
-
-  if (!sessionCookie) {
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('redirect', pathname)
-    return NextResponse.redirect(loginUrl)
+  if (pathname === '/login' && user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
   }
 
-  return NextResponse.next()
+  return supabaseResponse
 }
 
 export const config = {

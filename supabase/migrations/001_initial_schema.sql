@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Public profiles access" ON profiles;
+CREATE POLICY "Public profiles access" ON profiles FOR ALL USING (true) WITH CHECK (true);
 
 -- ─── leads ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS leads (
@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated users can manage leads" ON leads FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Public leads access" ON leads;
+CREATE POLICY "Public leads access" ON leads FOR ALL USING (true) WITH CHECK (true);
 
 -- ─── clients ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS clients (
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS clients (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated users can manage clients" ON clients FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Public clients access" ON clients;
+CREATE POLICY "Public clients access" ON clients FOR ALL USING (true) WITH CHECK (true);
 
 -- ─── projects ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS projects (
@@ -57,7 +59,8 @@ CREATE TABLE IF NOT EXISTS projects (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated users can manage projects" ON projects FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Public projects access" ON projects;
+CREATE POLICY "Public projects access" ON projects FOR ALL USING (true) WITH CHECK (true);
 
 -- ─── tasks ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tasks (
@@ -71,7 +74,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated users can manage tasks" ON tasks FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Public tasks access" ON tasks;
+CREATE POLICY "Public tasks access" ON tasks FOR ALL USING (true) WITH CHECK (true);
 
 -- ─── quotes ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS quotes (
@@ -83,7 +87,8 @@ CREATE TABLE IF NOT EXISTS quotes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE quotes ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated users can manage quotes" ON quotes FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Public quotes access" ON quotes;
+CREATE POLICY "Public quotes access" ON quotes FOR ALL USING (true) WITH CHECK (true);
 
 -- ─── files ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS files (
@@ -95,9 +100,14 @@ CREATE TABLE IF NOT EXISTS files (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated users can manage files" ON files FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Public files access" ON files;
+CREATE POLICY "Public files access" ON files FOR ALL USING (true) WITH CHECK (true);
 
--- ─── Storage bucket ───────────────────────────────────────────────────────────
--- Run this in Supabase Dashboard > Storage > Create a new bucket named 'files'
--- Or via SQL:
--- INSERT INTO storage.buckets (id, name, public) VALUES ('files', 'files', false);
+-- ─── Storage Bucket ───────────────────────────────────────────────────────────
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('files', 'files', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Storage Files Access" ON storage.objects;
+CREATE POLICY "Public Storage Files Access" ON storage.objects
+FOR ALL USING (bucket_id = 'files') WITH CHECK (bucket_id = 'files');
